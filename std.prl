@@ -1,0 +1,7 @@
+? Priml standard library
+? Available online at https://www.github.com/x-Eagle-x/Priml/std.prl
+? Not finished, everything below is made for testing purposes
+
+extern printnum $
+extern println $
+extern bench $
