@@ -1,21 +1,29 @@
 #include "parser.hpp"
 #include "lexer.hpp"
+#include "registers.hpp"
 
 #include <string>
+#include <sstream>
 #include <vector>
 #include <algorithm>
 
 #define STR(Str) #Str
 
-#define INFO(Message, Extra) std::printf("\033[93mCompilation info\033[0m in %s @ \033[92m%i\033[0m: %s%s\n", m_InputFiles[m_CurrentFile].c_str(), m_Line + 1, Message, Extra)
-#define WARN(Message, Extra) std::printf("\033[93mCompilation warning\033[0m in %s @ \033[92m%i\033[0m: %s%s\n", m_InputFiles[m_CurrentFile].c_str(), m_Line + 1, Message, Extra)
-#define WARNG(Message, Extra) std::printf("\033[93mCompilation warning\033[0m: %s%s\n", Message, Extra)
-#define ERROR(Message, Extra) std::fprintf(stderr, "\033[91mCompilation error\033[0m in %s @ \033[92m%i\033[0m: %s%s\n", m_InputFiles[m_CurrentFile].c_str(), m_Line + 1, Message, Extra); Fail()
+#define INFO(Message, Extra) std::printf("\033[93mCompilation info\033[0m in %s @ L\033[92m%i\033[0m: %s\033[96m%s\033[0m\n", m_InputFiles[m_CurrentFile].c_str(), m_Line + 1, Message, Extra)
+#define WARN(Message, Extra) std::printf("\033[93mCompilation warning\033[0m in %s @ L\033[92m%i\033[0m: %s\033[96m%s\033[0m\n", m_InputFiles[m_CurrentFile].c_str(), m_Line + 1, Message, Extra)
+#define WARNG(Message, Extra) std::printf("\033[93mCompilation warning\033[0m: %s\033[96m%s\033[0m\n", Message, Extra)
+#define ERROR(Message, Extra) std::fprintf(stderr, "\033[91mCompilation error\033[0m in %s @ L\033[92m%i\033[0m: %s\033[96m%s\033[0m\n", m_InputFiles[m_CurrentFile].c_str(), m_Line + 1, Message, Extra); Fail()
+#define ERRORG(Message, Extra) std::fprintf(stderr, "\033[91mCompilation error\033[0m: %s\033[96m%s\033[0m\n", Message, Extra); Fail()
 
-#define EXPECT(Kind) if (TempPeekToken().m_Kind != Kind) {std::fprintf(stderr, "\033[91mCompilation error\033[0m in %s @ \033[92m%i\033[0m: expected \033[93m<%s>\033[0m, got <type:%i>.\n", m_InputFiles[m_CurrentFile].c_str(), m_Line + 1, STR(Kind), TempPeekToken().m_Kind); Fail();}
+#define EXPECT(Kind) if (TempPeekToken().m_Kind != Kind) {std::fprintf(stderr, "\033[91mCompilation error\033[0m in %s @ L\033[92m%i\033[0m: expected \033[93m<%s>\033[0m, got <type:%i>.\n", m_InputFiles[m_CurrentFile].c_str(), m_Line + 1, STR(Kind), TempPeekToken().m_Kind); Fail();}
 
 #define CHAR_TOKEN(x, y) CToken{std::string(1, x), y}
 #define STR_TOKEN(x, y) CToken{x, y}
+
+enum OP_EX
+{
+    GOTO = 30
+};
 
 CToken CParser::PeekToken(std::size_t Peek) {
     if (m_Index + Peek > m_Lexer->m_Tokens.size()) {
@@ -39,18 +47,18 @@ void CParser::Feed(CLexer &Lexer) {
     m_Lexer = &Lexer;
 }
 
-void CParser::OEmit(OP Opcode) {
-    m_OutOverhead.push_back({Opcode, 0, 0, 0});
+void CParser::OEmit(OP Opcode, std::string Extra) {
+    m_OutOverhead.push_back({Opcode, 0, 0, 0, Extra});
     m_WrittenBytes += 1;
 }
 
-void CParser::OEmitL(OP Opcode, uint32_t Left) {
-    m_OutOverhead.push_back({Opcode, 1, Left, 0});
+void CParser::OEmitL(OP Opcode, uint32_t Left, std::string Extra) {
+    m_OutOverhead.push_back({Opcode, 1, Left, 0, Extra});
     m_WrittenBytes += 5;
 }
 
-void CParser::OEmitLR(OP Opcode, uint32_t Left, uint32_t Right) {
-    m_OutOverhead.push_back({Opcode, 2, Left, Right});
+void CParser::OEmitLR(OP Opcode, uint32_t Left, uint32_t Right, std::string Extra) {
+    m_OutOverhead.push_back({Opcode, 2, Left, Right, Extra});
     m_WrittenBytes += 9;
 }
 
@@ -102,20 +110,38 @@ void CParser::Close() {
     m_OutStream.close();
 }
 
+void CParser::SetNoStart() {
+    m_NoStart = true;
+}
+
 void CParser::StartParsing() {
+    EmitLR(OP::MOV, STACK_PTR, STACK_BASE);
+
     for (m_Index = 0; m_Index < m_Lexer->m_Tokens.size(); m_Index++) {
         Parse();
     }
 
-    if (m_SubSymbols.find("start") == m_SubSymbols.end()) {
-        WARN("sub \"start\" not found", "");
-        EmitL(OP::JMP, 1);
-    }
-    else {
-        EmitL(OP::JMP, m_SubSymbols["start"]);
+    if (!m_NoStart) {
+        if (m_SubSymbols.find("start") == m_SubSymbols.end()) {
+            WARN("sub \"start\" not found", "");
+            EmitL(OP::JMP, 1);
+        }
+        else {
+            EmitL(OP::JMP, m_SubSymbols["start"]);
+        }
     }
 
     for (auto Inst : m_OutOverhead) {
+        if (Inst.m_Opcode == (OP) OP_EX::GOTO) {
+            auto Delim = Inst.m_Extra.find(':');
+            std::string Sub = Inst.m_Extra.substr(0, Delim), Location = &Inst.m_Extra[Delim + 1];
+            if (m_Locations[Sub].find(Location) == m_Locations[Sub].end()) {
+                ERRORG("can't do \"goto\" to the undefined location ", Inst.m_Extra.c_str());
+            }
+            Inst.m_Opcode = OP::JMP;
+            Inst.m_Left = m_Locations[Sub][Location];
+        }
+
         switch (Inst.m_Operands) {
             case 0: Emit(Inst.m_Opcode); break;
             case 1: EmitL(Inst.m_Opcode, Inst.m_Left); break;
@@ -123,7 +149,7 @@ void CParser::StartParsing() {
         }
     }
 
-    if ((uint32_t) PROGRAM_SIZE < m_WrittenBytes) {
+    if (PROGRAM_SIZE < m_WrittenBytes) {
         WARNG("the maximum program size is not enough. Bugs may occur in the ReWave VM implementation.", "");
     }
     if (m_FailedCompilation) {
@@ -134,24 +160,27 @@ void CParser::StartParsing() {
 
 void CParser::Parse() {
     auto PushStack = [this](uint32_t What) {
-        OEmitLR(OP::MOV, ++m_StackPtr, What);
-        OEmitLR(OP::MOV, STACK_BASE_PTR, m_StackPtr);
+        OEmitLR(OP::ADD, STACK_PTR, 1);          // add stack, 1
+        OEmitLR(MEML(OP::MOV), STACK_PTR, What); // mov %stack, what
     };
 
     auto PopStack = [this]() {
-        OEmitLR(OP::MOV, m_StackPtr, 0);
-        OEmitLR(OP::MOV, STACK_BASE_PTR, --m_StackPtr);
+        //OEmitLR(MEML(OP::MOV), STACK_PTR, 0);
+        OEmitLR(OP::SUB, STACK_PTR, 1);
     };
 
     auto CheckCondition = [this](OP Condition) {
-        OEmitLR(MEMOP(OP::CMP), m_StackPtr, m_StackPtr - 1);
+        OEmitLR(OP::SUB, STACK_PTR, 1);
+        OEmitLR(MEMR(OP::LOAD), REG::B0, STACK_PTR);
+        OEmitLR(OP::ADD, STACK_PTR, 1);
+        OEmitLR(MEMR(OP::LOAD), REG::A0, STACK_PTR);
         uint32_t CmpLocation = m_OutOverhead.size();
         OEmitL(Condition, 0);
         OEmitL(OP::JMP, 0);
         uint32_t Equals = m_WrittenBytes;
         while (TempPeekToken().m_Kind != ETokenKind::KwEnd) {
             if (TempPeekToken().m_Kind == ETokenKind::Illegal) {
-                ERROR("no matching \"end\" found.", "");
+                ERROR("no matching \"end\" found", "");
                 break;
             }
             PeekToken();
@@ -159,6 +188,15 @@ void CParser::Parse() {
         }
         m_OutOverhead[CmpLocation].m_Left = Equals;
         m_OutOverhead[CmpLocation + 1].m_Left = m_WrittenBytes;
+        OEmitLR(OP::MOV, REG::CX, 0);
+    };
+
+    auto DoOperator = [this, PopStack](OP Operator) {
+        OEmitLR(MEMR(OP::LOAD), REG::BX, STACK_PTR);
+        OEmitLR(OP::SUB, STACK_PTR, 1);
+        OEmitLR(MEMR(OP::LOAD), REG::CX, STACK_PTR);
+        OEmitLR(MEMR(Operator), REG::CX, REG::BX);
+        OEmitLR(MEMLR(OP::MOV), STACK_PTR, REG::CX);
     };
 
     auto Token = CurrentToken();
@@ -207,6 +245,9 @@ void CParser::Parse() {
                 ERROR("cannot do \"sub\" inside a sub region", "");
             }
             EXPECT(ETokenKind::Identifier);
+            if (m_SubSymbols.find(TempPeekToken().m_Raw) != m_SubSymbols.end()) {
+                ERROR("redefined sub region ", TempPeekToken().m_Raw.c_str());
+            }
             m_SubSymbols[m_CurrentSub = PeekToken().m_Raw] = m_WrittenBytes;
             break;
         }
@@ -239,42 +280,41 @@ void CParser::Parse() {
             EXPECT(ETokenKind::Identifier);
             auto Sub = PeekToken().m_Raw;
             if (m_SubSymbols.find(Sub) == m_SubSymbols.end()) {
-                ERROR("unknown sub ", Sub.c_str());
+                //ERROR("unknown sub ", Sub.c_str());
                 break;
             }
             if (m_CurrentSub == Sub) {
                 WARN("possible infinite loop", "");
             }
-            OEmitL(OP::JMP, m_SubSymbols[Sub]);
+            OEmitL(OP::JMP, m_SubSymbols[Sub], Sub);
             break;
         } 
 
         case ETokenKind::At: {
             EXPECT(ETokenKind::Identifier);
-            auto LocName = PeekToken();
-            if (m_Locations[m_CurrentSub].find(LocName.m_Raw) == m_Locations[m_CurrentSub].end()) {
-                ERROR("already defined location ", LocName.m_Raw.c_str());
+            auto LocName = PeekToken().m_Raw;
+            if (m_Locations[m_CurrentSub].find(LocName) != m_Locations[m_CurrentSub].end()) {
+                ERROR("already defined location ", LocName.c_str());
             }
-            m_Locations[m_CurrentSub][LocName.m_Raw] = m_WrittenBytes;
+            m_Locations[m_CurrentSub][LocName] = m_WrittenBytes;
             break;
         }
 
         case ETokenKind::KwReturn: {
             OEmit(OP::RET);
-        }
-
-        /* To be finished
-        case ETokenKind::KwGoto: {
-            EXPECT(ETokenKind::Identifier);
             break;
         }
-        */
 
+         case ETokenKind::KwGoto: {
+            EXPECT(ETokenKind::Identifier);
+            auto LocName = PeekToken();
+            OEmitL((OP) OP_EX::GOTO, 0, (m_CurrentSub + ":" + LocName.m_Raw));
+            break;
+        }
+        
         case ETokenKind::KwEmpty: {
-            while (m_StackPtr > m_StackStart) {
-                OEmitLR(OP::MOV, m_StackPtr--, 0);
-            }
-            OEmitLR(OP::MOV, STACK_BASE_PTR, m_StackStart);
+            OEmitLR(OP::MOV, STACK_PTR, STACK_BASE);
+            OEmitLR(MEMR(OP::MOV), STACK_PTR, 0); // for safety purposes
             break;
         }
 
@@ -284,15 +324,19 @@ void CParser::Parse() {
         }
 
         case ETokenKind::KwDuplicate: {
+            OEmitLR(MEMR(OP::LOAD), REG::BX, STACK_PTR);
             PushStack(0);
-            OEmitLR(MEMOP(OP::MOV), m_StackPtr, m_StackPtr - 1);
+            OEmitLR(MEMLR(OP::MOV), STACK_PTR, REG::BX);
             break;
         }
 
         case ETokenKind::KwSwap: {
-            OEmitLR(MEMOP(OP::MOV), 0x05, m_StackPtr - 1);
-            OEmitLR(MEMOP(OP::MOV), m_StackPtr - 1, m_StackPtr);
-            OEmitLR(MEMOP(OP::MOV), m_StackPtr, 0x05);
+            OEmitLR(MEMR(OP::LOAD), REG::BX, STACK_PTR);
+            OEmitLR(OP::SUB, STACK_PTR, 1);
+            OEmitLR(MEMR(OP::LOAD), REG::CX, STACK_PTR);
+            OEmitLR(MEMLR(OP::MOV), STACK_PTR, REG::BX);
+            OEmitLR(OP::ADD, STACK_PTR, 1);
+            OEmitLR(MEMLR(OP::MOV), STACK_PTR, REG::CX);
             break;
         }
 
@@ -331,26 +375,22 @@ void CParser::Parse() {
         }
 
         case ETokenKind::OpAdd: {
-            OEmitLR(MEMOP(OP::ADD), m_StackPtr - 1, m_StackPtr);
-            PopStack();
+            DoOperator(OP::ADD);
             break;
         }
 
         case ETokenKind::OpSub: {
-            OEmitLR(MEMOP(OP::SUB), m_StackPtr - 1, m_StackPtr);
-            PopStack();
+            DoOperator(OP::SUB);
             break;
         }
 
         case ETokenKind::OpMul: {
-            OEmitLR(MEMOP(OP::MUL), m_StackPtr - 1, m_StackPtr);
-            PopStack();
+            DoOperator(OP::MUL);
             break;
         }
 
         case ETokenKind::OpDiv: {
-            OEmitLR(MEMOP(OP::DIV), m_StackPtr - 1, m_StackPtr);
-            PopStack();
+            DoOperator(OP::DIV);
             break;
         }
 
@@ -391,6 +431,12 @@ void CParser::Parse() {
         case ETokenKind::EndOfFile: {
             m_CurrentFile++;
             m_Line = 0;
+            break;
+        }
+
+        case ETokenKind::Illegal: {
+            ERROR("illegal statement ", Token.m_Raw.c_str());
+            break;
         }
     }
 }
