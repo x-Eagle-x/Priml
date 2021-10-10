@@ -7,8 +7,7 @@
 #include "lexer.hpp"
 #include "opcodes.hpp"
 
-union uint32_byte
-{
+union uint32_byte {
     uint8_t Byte[4];
     uint32_t Integer;
     
@@ -21,13 +20,17 @@ union uint32_byte
     }
 };
 
-#define STACK_BASE_PTR 4
-#define PROGRAM_SIZE 4069
+#define STACK_PTR 4 
+#define STACK_BASE 16
+
+#define PROGRAM_SIZE 4096
 
 struct SInstruction {
     OP m_Opcode;
     uint8_t m_Operands;
     uint32_t m_Left, m_Right;
+    
+    std::string m_Extra;
 };
 
 class CParser {
@@ -42,8 +45,8 @@ class CParser {
 
     CLexer *m_Lexer;
 
-    bool m_FailedCompilation = false;
-    uint32_t m_GlobalCallId = 0, m_StackStart = 0x0F, m_StackPtr = 0x0F;
+    bool m_FailedCompilation = false, m_NoStart = false;
+    uint32_t m_GlobalCallId = 0;
 
     std::map<std::string, uint32_t> m_ExternSymbols;
     std::map<std::string, uint32_t> m_SubSymbols;
@@ -57,15 +60,16 @@ public:
     CToken TempPeekToken(std::size_t Peek = 1);
     CToken CurrentToken();
 
-    void OEmit(OP Opcode);
-    void OEmitL(OP Opcode, uint32_t Left);
-    void OEmitLR(OP Opcode, uint32_t Left, uint32_t Right);
+    void OEmit(OP Opcode, std::string Extra = "");
+    void OEmitL(OP Opcode, uint32_t Left, std::string Extra = "");
+    void OEmitLR(OP Opcode, uint32_t Left, uint32_t Right, std::string Extra = "");
 
     void WriteBytes(uint32_t Source);
     void Emit(OP Opcode);
     void EmitL(OP Opcode, uint32_t Left);
     void EmitLR(OP Opcode, uint32_t Left, uint32_t Right);
 
+    void SetNoStart();
     void Fail();
     void Feed(CLexer &Lexer);
     void AddFile(std::string Name);
