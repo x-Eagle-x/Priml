@@ -5,16 +5,16 @@
 #include <fstream>
 
 void PrintUsage() {
-    std::cout << "Usage:\n\t";
-    std::cout <<    "...      <input>\n\t";
-    std::cout <<    "--output <file>";
-    std::cout << "\n";
+    std::printf("Usage:\n\t");
+    std::printf("...      <input>\n\t");
+    std::printf("--output <file>");
+    std::printf("\n");
 }
 
 void PrintVersion() {
-    std::cout << "\033[95mPriml\033[0m compiler 1.0\n";
-    std::cout << "Copyright (C) 2021 Addy, Republic of Kosovo\n";
-    std::cout << "Available at \033[4;94mhttps://www.github.com/x-Eagle-x/Priml/\033[0m\n\n";
+    std::printf("\033[95mPriml\033[0m compiler 1.1\n");
+    std::printf("Copyright (C) 2021 Addy, Republic of Kosovo\n");
+    std::printf("Available at \033[4;94mhttps://www.github.com/x-Eagle-x/Priml/\033[0m\n\n");
 }
 
 int main(int argc, char *args[]) {
@@ -47,10 +47,14 @@ int main(int argc, char *args[]) {
             PrintUsage();
             return 0;
         }
+        else if (ArgType == "--nostart") {
+            Parser.SetNoStart();
+            continue;
+        }
 
         InputStream.open(args[arg], std::ios::in);
         if (!InputStream.is_open()) {
-            std::cout << "\033[91mError\033[0m: couldn't open input file " << args[arg] << ".\n";
+            std::fprintf(stderr, "\033[91mError\033[0m: couldn't open input file \033[96m%s\033[0m\n", args[arg]);
             return 1;
         }
 
