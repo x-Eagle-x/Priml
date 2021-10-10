@@ -18,6 +18,7 @@ enum ETokenKind {
     KwGosub,
     KwJumpsub,
     KwReturn,
+    KwGoto,
     
     /* Stacking keywords */
     KwEmpty,

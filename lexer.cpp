@@ -11,7 +11,9 @@ namespace NIdentMatcher {
         {"endsub", KwEndsub},
         {"gosub", KwGosub},
         {"jumpsub", KwJumpsub},
-
+        {"return", KwReturn},
+        {"goto", KwGoto},
+        
         {"empty", KwEmpty},
         {"drop", KwDrop},
         {"swap", KwSwap},
@@ -19,8 +21,8 @@ namespace NIdentMatcher {
 
         {"eq", KwEqual},
         {"neq", KwNotEqual},
-        {"gt", KwHigher},
-        {"gteq", KwHigherEqual},
+        {"hi", KwHigher},
+        {"hieq", KwHigherEqual},
         {"lw", KwLower},
         {"lweq", KwLowerEqual},
 
