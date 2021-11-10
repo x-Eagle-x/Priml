@@ -8,7 +8,11 @@ void PrintUsage() {
     std::printf("Usage:\n\t");
     std::printf("...      <input>\n\t");
     std::printf("--output <file>");
-    std::printf("\n");
+    std::printf("\n\n");
+    std::printf("Additional arguments:\n\t");
+    std::printf("--std: include the standard header\n\t");
+    std::printf("--version: version page\n\t");
+    std::printf("--help: this page\n\t");
 }
 
 void PrintVersion() {
