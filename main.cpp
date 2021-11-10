@@ -11,6 +11,7 @@ void PrintUsage() {
     std::printf("\n\n");
     std::printf("Additional arguments:\n\t");
     std::printf("--std: include the standard header\n\t");
+    std::printf("--nostart: compile without the start function (caution: not safe)\n\t");
     std::printf("--version: version page\n\t");
     std::printf("--help: this page\n\t");
 }
